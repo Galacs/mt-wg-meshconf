@@ -17,11 +17,15 @@ struct Cli {
 enum Commands {
     /// Initializes the csv file to store peer information
     Init,
+
+    /// Generate missing private keys
+    // Continued program logic goes here...
+    GenPrivkeys,
 }
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct Record {
     name: String,
     interface: String,
@@ -34,6 +38,7 @@ struct Record {
 
 fn main() {
     let cli = Cli::parse();
+
     match &cli.command {
         Some(Commands::Init) => {
             let mut wtr = csv::Writer::from_path(cli.filename.clone()).unwrap();
@@ -47,8 +52,32 @@ fn main() {
                 privkey: Some(Privkey::generate()),
             })
             .unwrap();
-            wtr.flush().unwrap();
             println!("{} was created.", cli.filename.to_str().unwrap());
+            wtr.flush().unwrap();
+        }
+        Some(Commands::GenPrivkeys) => {
+            let mut rdr = csv::Reader::from_path(cli.filename.clone()).unwrap();
+            let mut generated_privkeys: u32 = 0;
+            let mut records = vec![];
+
+            for result in rdr.deserialize() {
+                let mut record: Record = result.unwrap();
+                if record.privkey.is_none() {
+                    record.privkey = Some(Privkey::generate());
+                    generated_privkeys += 1;
+                }
+                records.push(record);
+            }
+
+            let mut wtr = csv::Writer::from_path(cli.filename.clone()).unwrap();
+            records.iter().for_each(|r| wtr.serialize(r).unwrap());
+            wtr.flush().unwrap();
+
+            if generated_privkeys > 0 {
+                println!("{generated_privkeys} key(s) were generated");
+            } else {
+                println!("no keys were generated");
+            }
         }
         None => {}
     }
