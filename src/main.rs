@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use std::{error::Error, io, process};
+use std::path::PathBuf;
 
 use wireguard_keys::Privkey;
 
@@ -7,7 +7,7 @@ use wireguard_keys::Privkey;
 #[command(version, about, long_about = None)]
 struct Cli {
     #[arg(short, long, default_value = "mesh.csv")]
-    filename: String,
+    filename: PathBuf,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -36,23 +36,20 @@ fn main() {
     let cli = Cli::parse();
     match &cli.command {
         Some(Commands::Init) => {
-            println!("on init la db....");
+            let mut wtr = csv::Writer::from_path(cli.filename.clone()).unwrap();
+            wtr.serialize(Record {
+                name: "node1".to_owned(),
+                interface: "node1".to_owned(),
+                endpoint: Some("10.200.0.10".to_owned()),
+                port_min: Some(1000),
+                port_max: Some(1050),
+                keepalive: Some(25),
+                privkey: Some(Privkey::generate()),
+            })
+            .unwrap();
+            wtr.flush().unwrap();
+            println!("{} was created.", cli.filename.to_str().unwrap());
         }
         None => {}
     }
-
-    let mut wtr = csv::Writer::from_writer(io::stdout());
-    // Add example
-    wtr.serialize(Record {
-        name: "node1".to_owned(),
-        interface: "node1".to_owned(),
-        endpoint: Some("10.200.0.10".to_owned()),
-        port_min: Some(1000),
-        port_max: Some(1050),
-        keepalive: Some(25),
-        privkey: Some(Privkey::generate()),
-    })
-    .unwrap();
-
-    // Continued program logic goes here...
 }
