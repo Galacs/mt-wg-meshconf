@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::{cmp::min, path::PathBuf};
+
+use anyhow::{Context, Result, anyhow};
 
 use wireguard_keys::Privkey;
 
@@ -19,8 +21,10 @@ enum Commands {
     Init,
 
     /// Generate missing private keys
-    // Continued program logic goes here...
     GenPrivkeys,
+
+    /// Check csv for duplicate and other configuration issues
+    Check,
 }
 
 use serde::{Deserialize, Serialize};
@@ -36,7 +40,7 @@ struct Record {
     privkey: Option<Privkey>,
 }
 
-fn main() {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match &cli.command {
@@ -79,6 +83,46 @@ fn main() {
                 println!("no keys were generated");
             }
         }
+        Some(Commands::Check) => {
+            // Number of nodes (will be optimized)
+            let nodes = csv::Reader::from_path(cli.filename.clone())?
+                .deserialize::<Record>()
+                .count() as u16;
+
+            // Not enough port Check
+            let mut rdr = csv::Reader::from_path(cli.filename.clone()).unwrap();
+            let mut smallest_port_range = u16::MAX;
+            for (i, result) in (2..).zip(rdr.deserialize()) {
+                let record: Record = result.unwrap();
+                if let Some(port_min) = record.port_min
+                    && let Some(port_max) = record.port_max
+                {
+                    let range = port_max.checked_sub(port_min).context(format!(
+                        "{}:{} {}: invalid port range port_min > port_max",
+                        cli.filename.display(),
+                        i,
+                        record.name
+                    ))? + 1;
+
+                    if range < nodes {
+                        Err(anyhow!(format!(
+                            "{}:{} {}: needs {} listening ports, but only {} were allowed ({}-{})",
+                            cli.filename.display(),
+                            i,
+                            record.name,
+                            nodes,
+                            range,
+                            port_min,
+                            port_max
+                        )))?;
+                    }
+
+                    smallest_port_range = min(smallest_port_range, range);
+                }
+            }
+            println!("{}: {} nodes are valid", cli.filename.display(), nodes);
+        }
         None => {}
     }
+    Ok(())
 }
