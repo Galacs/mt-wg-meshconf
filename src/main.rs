@@ -45,7 +45,8 @@ fn main() -> Result<()> {
 
     match &cli.command {
         Some(Commands::Init) => {
-            let mut wtr = csv::Writer::from_path(cli.filename.clone()).unwrap();
+            let mut wtr = csv::Writer::from_path(cli.filename.clone())
+                .context(format!("Failed to write csv to {}", cli.filename.display()))?;
             wtr.serialize(Record {
                 name: "node1".to_owned(),
                 interface: "node1".to_owned(),
@@ -54,18 +55,24 @@ fn main() -> Result<()> {
                 port_max: Some(1050),
                 keepalive: Some(25),
                 privkey: Some(Privkey::generate()),
-            })
-            .unwrap();
-            println!("{} was created.", cli.filename.to_str().unwrap());
-            wtr.flush().unwrap();
+            })?;
+            println!(
+                "{} was created.",
+                cli.filename.to_str().context("filename error")?
+            );
+            wtr.flush()
+                .context(format!("Failed to write to {}", cli.filename.display()))?;
         }
         Some(Commands::GenPrivkeys) => {
-            let mut rdr = csv::Reader::from_path(cli.filename.clone()).unwrap();
+            let mut rdr = csv::Reader::from_path(cli.filename.clone()).context(format!(
+                "Failed to read csv from {}",
+                cli.filename.display()
+            ))?;
             let mut generated_privkeys: u32 = 0;
             let mut records = vec![];
 
             for result in rdr.deserialize() {
-                let mut record: Record = result.unwrap();
+                let mut record: Record = result?;
                 if record.privkey.is_none() {
                     record.privkey = Some(Privkey::generate());
                     generated_privkeys += 1;
@@ -73,9 +80,13 @@ fn main() -> Result<()> {
                 records.push(record);
             }
 
-            let mut wtr = csv::Writer::from_path(cli.filename.clone()).unwrap();
-            records.iter().for_each(|r| wtr.serialize(r).unwrap());
-            wtr.flush().unwrap();
+            let mut wtr = csv::Writer::from_path(cli.filename.clone())
+                .context(format!("Failed to write csv to {}", cli.filename.display()))?;
+            records
+                .iter()
+                .try_for_each(|r| wtr.serialize(r).context("csv reading error"))?;
+            wtr.flush()
+                .context(format!("Failed to write to {}", cli.filename.display()))?;
 
             if generated_privkeys > 0 {
                 println!("{generated_privkeys} key(s) were generated");
@@ -90,10 +101,13 @@ fn main() -> Result<()> {
                 .count() as u16;
 
             // Not enough port Check
-            let mut rdr = csv::Reader::from_path(cli.filename.clone()).unwrap();
+            let mut rdr = csv::Reader::from_path(cli.filename.clone()).context(format!(
+                "Failed to read csv from {}",
+                cli.filename.display()
+            ))?;
             let mut smallest_port_range = u16::MAX;
             for (i, result) in (2..).zip(rdr.deserialize()) {
-                let record: Record = result.unwrap();
+                let record: Record = result?;
                 if let Some(port_min) = record.port_min
                     && let Some(port_max) = record.port_max
                 {
