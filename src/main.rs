@@ -258,6 +258,63 @@ fn main() -> Result<()> {
                     ip[1], r[0].interface
                 ));
             }
+
+            // Wireguard
+            records.iter().for_each(|r| {
+                configs
+                    .get_mut(&r.name)
+                    .unwrap()
+                    .push_str("\n\n/interface wireguard")
+            });
+
+            // bad way to store which enpoint port each peer has to use
+            // ((local_peer, remote_peer), port)
+            let mut port_assignations = HashMap::new();
+
+            // "server side" config
+            for server in &records {
+                let mut port = server.port_min.context("no min port set")?;
+                for peer in &records {
+                    if server.name == peer.name {
+                        continue;
+                    }
+                    configs.get_mut(&server.name).unwrap().push_str(&format!(
+                        "\nadd listen-port={} mtu=1420 name={} private-key=\"{}\"",
+                        port,
+                        peer.interface,
+                        server.privkey.context("missing privkey")?
+                    ));
+                    port_assignations.insert((server.name.clone(), peer.name.clone()), port);
+                    port += 1;
+                }
+            }
+
+            // "peer side" config
+
+            records.iter().for_each(|r| {
+                configs
+                    .get_mut(&r.name)
+                    .unwrap()
+                    .push_str("\n/interface wireguard peers")
+            });
+
+            for server in &records {
+                for peer in &records {
+                    if server.name == peer.name {
+                        continue;
+                    }
+                    configs.get_mut(&server.name).unwrap().push_str(&format!(
+                        "\nadd allowed-address=0.0.0.0/0 endpoint-address={} endpoint-port={} interface={} name={} persistent-keepalive={}s public-key=\"{}\"",
+                        peer.endpoint.clone().context("no endpoint address")?,
+                        port_assignations.get(&(peer.name.clone(), server.name.clone())).unwrap(),
+                        peer.interface,
+                        peer.name,
+                        peer.keepalive.unwrap_or(0),
+                        peer.privkey.context("missing privkey")?.pubkey(),
+                    ));
+                }
+            }
+
             for (node, config) in configs {
                 println!("{node}:\n{config}");
             }
