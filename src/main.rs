@@ -287,7 +287,8 @@ fn main() -> Result<()> {
                 }
             }
 
-            for _ in 0..interfaces.len() {
+            ptp_addresses.push(*ptp_start_ip);
+            for _ in 1..interfaces.len() {
                 let ptp_next_ip = match ptp_addresses.last().unwrap_or(ptp_start_ip) {
                     IpAddr::V4(ip4) => {
                         IpAddr::from((u32::from_be_bytes(ip4.octets()) + 1).to_be_bytes())
