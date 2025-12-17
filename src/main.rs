@@ -27,6 +27,12 @@ enum Commands {
 
     /// Check csv for duplicate and other configuration issues
     Check,
+
+    /// Generate mikrotik config
+    GenConfig {
+        #[arg(short, long)]
+        ptp_start_ip: IpAddr,
+    },
 }
 
 use serde::{Deserialize, Serialize};
@@ -178,8 +184,32 @@ fn main() -> Result<()> {
                     smallest_port_range = min(smallest_port_range, range);
                 }
             }
-
             println!("{}: {} nodes are valid", cli.filename.display(), nodes);
+        }
+        Some(Commands::GenConfig { ptp_start_ip }) => {
+            // Generate PTP ip pairs
+
+            let mut ptp_next_adress = *ptp_start_ip;
+            let mut rdr = csv::Reader::from_path(cli.filename.clone()).context(format!(
+                "Failed to read csv from {}",
+                cli.filename.display()
+            ))?;
+            let mut ptp_addresses = vec![];
+            for (i, result) in (0..).zip(rdr.deserialize()) {
+                let record: Record = result?;
+                // let ptp_next_ip = u128::from_be_bytes(ptp_start_ip.se);
+                // dbg!(Ipv4Addr::from_bits(ptp_next_ip));
+                let ptp_next_ip = match ptp_next_adress {
+                    IpAddr::V4(ip4) => {
+                        IpAddr::from((u32::from_be_bytes(ip4.octets()) + i).to_be_bytes())
+                    }
+                    IpAddr::V6(ip6) => {
+                        IpAddr::from((u128::from_be_bytes(ip6.octets()) + i as u128).to_be_bytes())
+                    }
+                };
+                ptp_addresses.push(ptp_next_ip);
+            }
+            dbg!(&ptp_addresses);
         }
         None => {}
     }
