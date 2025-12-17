@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::collections::HashMap;
 use std::{cmp::min, path::PathBuf};
 
 use anyhow::{Context, Result, anyhow};
@@ -100,14 +101,53 @@ fn main() -> Result<()> {
                 .deserialize::<Record>()
                 .count() as u16;
 
-            // Not enough port Check
             let mut rdr = csv::Reader::from_path(cli.filename.clone()).context(format!(
                 "Failed to read csv from {}",
                 cli.filename.display()
             ))?;
+
+            let mut maps: Vec<HashMap<String, usize>> = vec![];
+            for _ in 0..3 {
+                maps.push(HashMap::new());
+            }
+
             let mut smallest_port_range = u16::MAX;
             for (i, result) in (2..).zip(rdr.deserialize()) {
                 let record: Record = result?;
+
+                // Check for duplicate name, interface, privkey
+                for ((k, field), field_name) in [
+                    record.name.clone(),
+                    record.interface,
+                    record
+                        .privkey
+                        .context(format!(
+                            "{}: {} {}: missing privkey",
+                            cli.filename.display(),
+                            i,
+                            record.name,
+                        ))?
+                        .to_string(),
+                ]
+                .iter()
+                .enumerate()
+                .zip(["name", "interface", "privkey"])
+                {
+                    if let Some(prev_record) = maps[k].get(field) {
+                        Err(anyhow!(format!(
+                            "{}:{} {}: duplicate {} found on line {}",
+                            cli.filename.display(),
+                            prev_record,
+                            record.name,
+                            field_name,
+                            i
+                        )))?;
+                    } else {
+                        maps[k].insert(field.to_owned(), i);
+                    }
+                }
+
+                // Not enough port Check
                 if let Some(port_min) = record.port_min
                     && let Some(port_max) = record.port_max
                 {
@@ -134,6 +174,7 @@ fn main() -> Result<()> {
                     smallest_port_range = min(smallest_port_range, range);
                 }
             }
+
             println!("{}: {} nodes are valid", cli.filename.display(), nodes);
         }
         None => {}
