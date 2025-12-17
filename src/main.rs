@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr};
 use std::{cmp::min, path::PathBuf};
 
 use anyhow::{Context, Result, anyhow};
@@ -35,6 +36,7 @@ struct Record {
     name: String,
     interface: String,
     endpoint: Option<String>,
+    loopback: IpAddr,
     port_min: Option<u16>,
     port_max: Option<u16>,
     keepalive: Option<u64>,
@@ -52,6 +54,7 @@ fn main() -> Result<()> {
                 name: "node1".to_owned(),
                 interface: "node1".to_owned(),
                 endpoint: Some("10.200.0.10".to_owned()),
+                loopback: IpAddr::V4(Ipv4Addr::new(10, 69, 0, 10)),
                 port_min: Some(1000),
                 port_max: Some(1050),
                 keepalive: Some(25),
@@ -107,7 +110,7 @@ fn main() -> Result<()> {
             ))?;
 
             let mut maps: Vec<HashMap<String, usize>> = vec![];
-            for _ in 0..3 {
+            for _ in 0..4 {
                 maps.push(HashMap::new());
             }
 
@@ -115,10 +118,11 @@ fn main() -> Result<()> {
             for (i, result) in (2..).zip(rdr.deserialize()) {
                 let record: Record = result?;
 
-                // Check for duplicate name, interface, privkey
+                // Check for duplicate name, interface, loopback, privkey
                 for ((k, field), field_name) in [
                     record.name.clone(),
                     record.interface,
+                    record.loopback.to_string(),
                     record
                         .privkey
                         .context(format!(
@@ -131,7 +135,7 @@ fn main() -> Result<()> {
                 ]
                 .iter()
                 .enumerate()
-                .zip(["name", "interface", "privkey"])
+                .zip(["name", "interface", "loopback", "privkey"])
                 {
                     if let Some(prev_record) = maps[k].get(field) {
                         Err(anyhow!(format!(
