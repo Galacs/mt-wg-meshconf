@@ -210,6 +210,16 @@ fn main() -> Result<()> {
                 );
             }
 
+            // Add addresses
+            // Add loopback addresses
+            records.iter().for_each(|r| {
+                configs.get_mut(&r.name).unwrap().push_str(&format!(
+                    "\n/ip address\nadd address={}/32 interface=lo",
+                    r.loopback
+                ))
+            });
+
+            // Add PTP addresses
             let mut interfaces = vec![];
             let mut ptp_addresses = vec![];
             for (i, a) in records.iter().enumerate() {
@@ -232,10 +242,6 @@ fn main() -> Result<()> {
                 };
                 ptp_addresses.push(ptp_next_ip);
             }
-
-            records
-                .iter()
-                .for_each(|r| configs.get_mut(&r.name).unwrap().push_str("\n/ip address"));
 
             for (ip, r) in ptp_addresses
                 .windows(2)
