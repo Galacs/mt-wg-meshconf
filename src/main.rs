@@ -210,55 +210,6 @@ fn main() -> Result<()> {
                 );
             }
 
-            // Add addresses
-            // Add loopback addresses
-            records.iter().for_each(|r| {
-                configs.get_mut(&r.name).unwrap().push_str(&format!(
-                    "\n/ip address\nadd address={}/32 interface=lo",
-                    r.loopback
-                ))
-            });
-
-            // Add PTP addresses
-            let mut interfaces = vec![];
-            let mut ptp_addresses = vec![];
-            for (i, a) in records.iter().enumerate() {
-                let mut x = 1;
-                for b in records.iter().skip(x + i) {
-                    interfaces.append(&mut vec![a, b]);
-                    x += 1;
-                    // Generate addresses pairs
-                }
-            }
-
-            for _ in 0..interfaces.len() {
-                let ptp_next_ip = match ptp_addresses.last().unwrap_or(ptp_start_ip) {
-                    IpAddr::V4(ip4) => {
-                        IpAddr::from((u32::from_be_bytes(ip4.octets()) + 1).to_be_bytes())
-                    }
-                    IpAddr::V6(ip6) => {
-                        IpAddr::from((u128::from_be_bytes(ip6.octets()) + 1).to_be_bytes())
-                    }
-                };
-                ptp_addresses.push(ptp_next_ip);
-            }
-
-            for (ip, r) in ptp_addresses
-                .windows(2)
-                .zip(interfaces.windows(2))
-                .step_by(2)
-            {
-                configs.get_mut(&r[0].name).unwrap().push_str(&format!(
-                    "\nadd address={}/31 interface={}",
-                    ip[0], r[1].interface
-                ));
-
-                configs.get_mut(&r[1].name).unwrap().push_str(&format!(
-                    "\nadd address={}/31 interface={}",
-                    ip[1], r[0].interface
-                ));
-            }
-
             // Wireguard
             records.iter().for_each(|r| {
                 configs
@@ -313,6 +264,55 @@ fn main() -> Result<()> {
                         peer.privkey.context("missing privkey")?.pubkey(),
                     ));
                 }
+            }
+
+            // Add addresses
+            // Add loopback addresses
+            records.iter().for_each(|r| {
+                configs.get_mut(&r.name).unwrap().push_str(&format!(
+                    "\n/ip address\nadd address={}/32 interface=lo",
+                    r.loopback
+                ))
+            });
+
+            // Add PTP addresses
+            let mut interfaces = vec![];
+            let mut ptp_addresses = vec![];
+            for (i, a) in records.iter().enumerate() {
+                let mut x = 1;
+                for b in records.iter().skip(x + i) {
+                    interfaces.append(&mut vec![a, b]);
+                    x += 1;
+                    // Generate addresses pairs
+                }
+            }
+
+            for _ in 0..interfaces.len() {
+                let ptp_next_ip = match ptp_addresses.last().unwrap_or(ptp_start_ip) {
+                    IpAddr::V4(ip4) => {
+                        IpAddr::from((u32::from_be_bytes(ip4.octets()) + 1).to_be_bytes())
+                    }
+                    IpAddr::V6(ip6) => {
+                        IpAddr::from((u128::from_be_bytes(ip6.octets()) + 1).to_be_bytes())
+                    }
+                };
+                ptp_addresses.push(ptp_next_ip);
+            }
+
+            for (ip, r) in ptp_addresses
+                .windows(2)
+                .zip(interfaces.windows(2))
+                .step_by(2)
+            {
+                configs.get_mut(&r[0].name).unwrap().push_str(&format!(
+                    "\nadd address={}/31 interface={}",
+                    ip[0], r[1].interface
+                ));
+
+                configs.get_mut(&r[1].name).unwrap().push_str(&format!(
+                    "\nadd address={}/31 interface={}",
+                    ip[1], r[0].interface
+                ));
             }
 
             for (node, config) in configs {
