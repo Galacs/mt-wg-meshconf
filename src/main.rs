@@ -10,6 +10,7 @@ use wireguard_keys::Privkey;
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
+    /// csv file path
     #[arg(short, long, default_value = "mesh.csv")]
     filename: PathBuf,
 
@@ -30,8 +31,13 @@ enum Commands {
 
     /// Generate mikrotik config
     GenConfig {
+        /// The first ip to use for ptp links between wg peers
         #[arg(short, long)]
         ptp_start_ip: IpAddr,
+
+        /// Use OSPF igp
+        #[arg(short, long, default_value_t = true)]
+        ospf: bool,
     },
 }
 
@@ -186,7 +192,7 @@ fn main() -> Result<()> {
             }
             println!("{}: {} nodes are valid", cli.filename.display(), nodes);
         }
-        Some(Commands::GenConfig { ptp_start_ip }) => {
+        Some(Commands::GenConfig { ptp_start_ip, ospf }) => {
             // Generate PTP ip pairs
 
             let mut configs = HashMap::new();
@@ -269,7 +275,7 @@ fn main() -> Result<()> {
             // Add loopback addresses
             records.iter().for_each(|r| {
                 configs.get_mut(&r.name).unwrap().push_str(&format!(
-                    "\n/ip address\nremove [find comment=\"mt-wg-meshconf\"]\nadd address={}/32 interface=lo comment=mt-wg-meshconf",
+                    "\n\n/ip address\nremove [find comment=\"mt-wg-meshconf\"]\nadd address={}/32 interface=lo comment=mt-wg-meshconf",
                     r.loopback
                 ))
             });
@@ -313,6 +319,41 @@ fn main() -> Result<()> {
                     "\nadd address={}/31 interface={} comment=mt-wg-meshconf",
                     ip[1], r[0].interface
                 ));
+            }
+
+            // OSPF
+            if *ospf {
+                records.iter().for_each(|r| {
+                    configs.get_mut(&r.name).unwrap().push_str(
+                        &format!("\n\n/routing ospf instance\nremove [find comment=\"mt-wg-meshconf\"]\nadd disabled=no name=ospf-ipv4 router-id={} comment=mt-wg-meshconf", r.loopback),
+                    )
+                });
+                records.iter().for_each(|r| {
+                    configs.get_mut(&r.name).unwrap().push_str(
+                        "\n/routing ospf area\nremove [find comment=\"mt-wg-meshconf\"]\nadd disabled=no instance=ospf-ipv4 name=area0-ipv4 comment=mt-wg-meshconf",
+                    )
+                });
+                records.iter().for_each(|r| {
+                    configs.get_mut(&r.name).unwrap().push_str(
+                        "\n/routing ospf interface-template\nremove [find comment=\"mt-wg-meshconf\"]\nadd area=area0-ipv4 disabled=no interfaces=lo passive comment=mt-wg-meshconf",
+                    )
+                });
+                // add individual ospf adjutancies
+
+                records.iter().for_each(|r| {
+                    let mut if_list = String::new();
+                    for b in &records {
+                        if r.name == b.name {
+                            continue;
+                        }
+                        dbg!(&b.interface);
+                        if_list.push_str(&format!("{},", b.interface));
+                    }
+                    if_list.pop();
+                    configs.get_mut(&r.name).unwrap().push_str(
+                        &format!("\nadd area=area0-ipv4 disabled=no interfaces={if_list} type=ptp comment=mt-wg-meshconf"),
+                    )
+                });
             }
 
             for (node, config) in configs {
