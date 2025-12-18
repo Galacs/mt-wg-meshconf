@@ -230,7 +230,7 @@ fn main() -> Result<()> {
                         continue;
                     }
                     configs.get_mut(&server.name).unwrap().push_str(&format!(
-                        "\nadd listen-port={} mtu=1420 name={} private-key=\"{}\"",
+                        "\nadd listen-port={} mtu=1420 name={} private-key=\"{}\" comment=mt-wg-meshconf",
                         port,
                         peer.interface,
                         server.privkey.context("missing privkey")?
@@ -255,7 +255,7 @@ fn main() -> Result<()> {
                         continue;
                     }
                     configs.get_mut(&server.name).unwrap().push_str(&format!(
-                        "\nadd allowed-address=0.0.0.0/0 endpoint-address={} endpoint-port={} interface={} name={} persistent-keepalive={}s public-key=\"{}\"",
+                        "\nadd allowed-address=0.0.0.0/0 endpoint-address={} endpoint-port={} interface={} name={} persistent-keepalive={}s public-key=\"{}\" comment=mt-wg-meshconf",
                         peer.endpoint.clone().context("no endpoint address")?,
                         port_assignations.get(&(peer.name.clone(), server.name.clone())).unwrap(),
                         peer.interface,
@@ -270,7 +270,7 @@ fn main() -> Result<()> {
             // Add loopback addresses
             records.iter().for_each(|r| {
                 configs.get_mut(&r.name).unwrap().push_str(&format!(
-                    "\n/ip address\nadd address={}/32 interface=lo",
+                    "\n/ip address\nadd address={}/32 interface=lo comment=mt-wg-meshconf",
                     r.loopback
                 ))
             });
@@ -306,12 +306,12 @@ fn main() -> Result<()> {
                 .step_by(2)
             {
                 configs.get_mut(&r[0].name).unwrap().push_str(&format!(
-                    "\nadd address={}/31 interface={}",
+                    "\nadd address={}/31 interface={} comment=mt-wg-meshconf",
                     ip[0], r[1].interface
                 ));
 
                 configs.get_mut(&r[1].name).unwrap().push_str(&format!(
-                    "\nadd address={}/31 interface={}",
+                    "\nadd address={}/31 interface={} comment=mt-wg-meshconf",
                     ip[1], r[0].interface
                 ));
             }
