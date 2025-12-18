@@ -46,6 +46,10 @@ enum Commands {
         /// Use EVPN with vxlan
         #[arg(short, long, default_value_t = true)]
         evpn: bool,
+
+        /// Use EVPN with vxlan
+        #[arg(short, long, default_value_t = 65001)]
+        as_num: u32,
     },
 }
 
@@ -209,6 +213,7 @@ fn main() -> Result<()> {
             ptp_start_ip,
             ospf,
             evpn,
+            as_num,
         }) => {
             // Generate PTP ip pairs
 
@@ -407,6 +412,43 @@ fn main() -> Result<()> {
                 records.iter().try_for_each(|r| {
                     for vlan in r.vlan.clone().context("no vlan set")? {
                     configs.get_mut(&r.name).unwrap().push_str(&format!("\nadd bridge=wg-mesh-br bridge-pvid={} dont-fragment=disabled learning=no local-address={} name=vxlan1000{} vni=1000{} comment=mt-wg-meshconf", vlan, r.loopback, vlan, vlan));
+                    }
+                    Ok::<(), anyhow::Error>(())
+                }).context("vxlan error")?;
+
+                // BGP
+                records.iter().for_each(|r| {
+                    configs.get_mut(&r.name).unwrap().push_str(
+                        &format!("\n\n/routing bgp instance\nremove [find comment=\"mt-wg-meshconf\"]\nadd as={as_num} disabled=no name=wg-mesh-bgp router-id={} comment=mt-wg-meshconf", r.loopback),
+                    )
+                });
+                records.iter().for_each(|r| {
+                    configs.get_mut(&r.name).unwrap().push_str(
+                        "\n/routing bgp connection\nremove [find comment=\"mt-wg-meshconf\"]",
+                    )
+                });
+                records.iter().try_for_each(|r| {
+                    for b in &records {
+                        if r.name == b.name {
+                            continue;
+                        }
+                    configs.get_mut(&r.name).unwrap().push_str(&format!("\nadd afi=evpn connect=yes disabled=no instance=wg-mesh-bgp listen=yes local.address={} .role=ibgp name={} remote.address={}/32 .as={} comment=mt-wg-meshconf",
+                        r.loopback, b.interface, b.loopback, as_num,
+                    ));
+                    }
+                    Ok::<(), anyhow::Error>(())
+                }).context("vxlan error")?;
+
+                // EVPN
+                records.iter().for_each(|r| {
+                    configs
+                        .get_mut(&r.name)
+                        .unwrap()
+                        .push_str("\n\n/routing bgp evpn\nremove [find comment=\"mt-wg-meshconf\"]")
+                });
+                records.iter().try_for_each(|r| {
+                    for vlan in r.vlan.clone().context("no vlan set")? {
+                    configs.get_mut(&r.name).unwrap().push_str(&format!("\nadd export.route-targets={as_num}:1000{vlan} import.route-targets={as_num}:1000{vlan} instance=wg-mesh-bgp name=wg-mesh-evpn-1000{vlan} vni=1000{vlan} comment=mt-wg-meshconf"));
                     }
                     Ok::<(), anyhow::Error>(())
                 }).context("vxlan error")?;
