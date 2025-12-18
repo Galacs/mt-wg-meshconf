@@ -215,7 +215,7 @@ fn main() -> Result<()> {
                 configs
                     .get_mut(&r.name)
                     .unwrap()
-                    .push_str("\n\n/interface wireguard")
+                    .push_str("\n\n/interface wireguard\nremove [find comment=\"mt-wg-meshconf\"]")
             });
 
             // bad way to store which enpoint port each peer has to use
@@ -243,10 +243,9 @@ fn main() -> Result<()> {
             // "peer side" config
 
             records.iter().for_each(|r| {
-                configs
-                    .get_mut(&r.name)
-                    .unwrap()
-                    .push_str("\n/interface wireguard peers")
+                configs.get_mut(&r.name).unwrap().push_str(
+                    "\n/interface wireguard peers\nremove [find comment=\"mt-wg-meshconf\"]",
+                )
             });
 
             for server in &records {
@@ -270,7 +269,7 @@ fn main() -> Result<()> {
             // Add loopback addresses
             records.iter().for_each(|r| {
                 configs.get_mut(&r.name).unwrap().push_str(&format!(
-                    "\n/ip address\nadd address={}/32 interface=lo comment=mt-wg-meshconf",
+                    "\n/ip address\nremove [find comment=\"mt-wg-meshconf\"]\nadd address={}/32 interface=lo comment=mt-wg-meshconf",
                     r.loopback
                 ))
             });
