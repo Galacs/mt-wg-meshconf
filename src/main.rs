@@ -1,7 +1,11 @@
 use clap::{Parser, Subcommand};
+use serde_with::{StringWithSeparator, serde_as};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
 use std::{cmp::min, path::PathBuf};
+
+use serde::{Deserialize, Serialize};
+use serde_with::formats::SemicolonSeparator;
 
 use anyhow::{Context, Result, anyhow};
 
@@ -41,8 +45,7 @@ enum Commands {
     },
 }
 
-use serde::{Deserialize, Serialize};
-
+#[serde_as]
 #[derive(Debug, Serialize, Deserialize)]
 struct Record {
     name: String,
@@ -53,6 +56,10 @@ struct Record {
     port_max: Option<u16>,
     keepalive: Option<u64>,
     privkey: Option<Privkey>,
+    #[serde_as(as = "Option<StringWithSeparator::<SemicolonSeparator, u16>>")]
+    vlan: Option<Vec<u16>>,
+    #[serde_as(as = "Option<StringWithSeparator::<SemicolonSeparator, String>>")]
+    vlan_ifs: Option<Vec<String>>,
 }
 
 fn main() -> Result<()> {
@@ -71,6 +78,8 @@ fn main() -> Result<()> {
                 port_max: Some(1050),
                 keepalive: Some(25),
                 privkey: Some(Privkey::generate()),
+                vlan: Some(vec![100, 101]),
+                vlan_ifs: Some(vec!["ether2".to_owned(), "ether3".to_owned()]),
             })?;
             println!(
                 "{} was created.",
