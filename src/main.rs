@@ -42,6 +42,10 @@ enum Commands {
         /// Use OSPF igp
         #[arg(short, long, default_value_t = true)]
         ospf: bool,
+
+        /// Use EVPN with vxlan
+        #[arg(short, long, default_value_t = true)]
+        evpn: bool,
     },
 }
 
@@ -201,7 +205,11 @@ fn main() -> Result<()> {
             }
             println!("{}: {} nodes are valid", cli.filename.display(), nodes);
         }
-        Some(Commands::GenConfig { ptp_start_ip, ospf }) => {
+        Some(Commands::GenConfig {
+            ptp_start_ip,
+            ospf,
+            evpn,
+        }) => {
             // Generate PTP ip pairs
 
             let mut configs = HashMap::new();
@@ -363,6 +371,45 @@ fn main() -> Result<()> {
                         &format!("\nadd area=area0-ipv4 disabled=no interfaces={if_list} type=ptp comment=mt-wg-meshconf"),
                     )
                 });
+            }
+
+            // EVPN
+            if *evpn {
+                // Bridge
+
+                records.iter().for_each(|r| {
+                    configs
+                        .get_mut(&r.name)
+                        .unwrap()
+                        .push_str("\n\n/interface bridge\nremove [find comment=\"mt-wg-meshconf\"]\nadd name=wg-mesh-br vlan-filtering=yes comment=mt-wg-meshconf")
+                });
+                records.iter().for_each(|r| {
+                    configs.get_mut(&r.name).unwrap().push_str(
+                        "\n/interface bridge port\nremove [find comment=\"mt-wg-meshconf\"]",
+                    )
+                });
+                records.iter().try_for_each(|r| {
+                    let ifs = r.vlan_ifs.clone().context("no vlan if set")?;
+                    let vlans = r.vlan.clone().context("no vlan set")?;
+                    for (i, vlan) in ifs.iter().zip(vlans) {
+                    configs.get_mut(&r.name).unwrap().push_str(&format!("\nadd bridge=wg-mesh-br frame-types=admit-only-untagged-and-priority-tagged interface={i} pvid={vlan} comment=mt-wg-meshconf"));
+                    }
+                    Ok::<(), anyhow::Error>(())
+                }).context("vlan error")?;
+
+                // VXLAN
+                records.iter().for_each(|r| {
+                    configs
+                        .get_mut(&r.name)
+                        .unwrap()
+                        .push_str("\n\n/interface vxlan\nremove [find comment=\"mt-wg-meshconf\"]")
+                });
+                records.iter().try_for_each(|r| {
+                    for vlan in r.vlan.clone().context("no vlan set")? {
+                    configs.get_mut(&r.name).unwrap().push_str(&format!("\nadd bridge=wg-mesh-br bridge-pvid={} dont-fragment=disabled learning=no local-address={} name=vxlan1000{} vni=1000{} comment=mt-wg-meshconf", vlan, r.loopback, vlan, vlan));
+                    }
+                    Ok::<(), anyhow::Error>(())
+                }).context("vxlan error")?;
             }
 
             for (node, config) in configs {
