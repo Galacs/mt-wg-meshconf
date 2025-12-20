@@ -68,6 +68,8 @@ struct Record {
     vlan: Option<Vec<u16>>,
     #[serde_as(as = "Option<StringWithSeparator::<SemicolonSeparator, String>>")]
     vlan_ifs: Option<Vec<String>>,
+    #[serde_as(as = "Option<StringWithSeparator::<SemicolonSeparator, String>>")]
+    ifs_ips: Option<Vec<String>>,
 }
 
 fn main() -> Result<()> {
@@ -88,6 +90,10 @@ fn main() -> Result<()> {
                 privkey: Some(Privkey::generate()),
                 vlan: Some(vec![100, 101]),
                 vlan_ifs: Some(vec!["ether2".to_owned(), "ether3".to_owned()]),
+                ifs_ips: Some(vec![
+                    "192.168.0.5/24".to_owned(),
+                    "192.168.1.5/24".to_owned(),
+                ]),
             })?;
             println!(
                 "{} was created.",
@@ -205,6 +211,19 @@ fn main() -> Result<()> {
                     }
 
                     smallest_port_range = min(smallest_port_range, range);
+                }
+
+                if let Some(ips) = record.ifs_ips {
+                    for ip in ips {
+                        if !ip.contains("/") {
+                            return Err(anyhow!(format!(
+                                "{}: {} {}: {ip} doesn't have netmask",
+                                cli.filename.display(),
+                                i,
+                                record.name
+                            )));
+                        }
+                    }
                 }
             }
             println!("{}: {} nodes are valid", cli.filename.display(), nodes);
@@ -411,7 +430,7 @@ fn main() -> Result<()> {
                 });
                 records.iter().try_for_each(|r| {
                     for vlan in r.vlan.clone().context("no vlan set")? {
-                    configs.get_mut(&r.name).unwrap().push_str(&format!("\nadd bridge=wg-mesh-br bridge-pvid={} dont-fragment=disabled learning=no local-address={} name=vxlan1000{} vni=1000{} comment=mt-wg-meshconf", vlan, r.loopback, vlan, vlan));
+                        configs.get_mut(&r.name).unwrap().push_str(&format!("\nadd bridge=wg-mesh-br bridge-pvid={} dont-fragment=disabled learning=no local-address={} name=vxlan1000{} vni=1000{} comment=mt-wg-meshconf", vlan, r.loopback, vlan, vlan));
                     }
                     Ok::<(), anyhow::Error>(())
                 }).context("vxlan error")?;
@@ -453,6 +472,40 @@ fn main() -> Result<()> {
                     Ok::<(), anyhow::Error>(())
                 }).context("vxlan error")?;
             }
+
+            // Vlans IP
+            records.iter().for_each(|r| {
+                configs
+                    .get_mut(&r.name)
+                    .unwrap()
+                    .push_str("\n\n/interface vlan\nremove [find comment=\"mt-wg-meshconf\"]")
+            });
+
+            records.iter().try_for_each(|r| {
+                for vlan in r.vlan.clone().context("no vlan set")? {
+                    configs.get_mut(&r.name).unwrap().push_str(&format!("\nadd interface=wg-mesh-br name=vlan{vlan} vlan-id={vlan} comment=mt-wg-meshconf"));
+                }
+                Ok::<(), anyhow::Error>(())
+            }).context("vlan interface error")?;
+
+            records
+                .iter()
+                .for_each(|r| configs.get_mut(&r.name).unwrap().push_str("\n/ip address"));
+
+            records
+                .iter()
+                .try_for_each(|r| {
+                    if let Some(ifs_ips) = &r.ifs_ips {
+                        for (ip, vlan) in ifs_ips.iter().zip(r.vlan.clone().context("no vlan set")?)
+                        {
+                            configs.get_mut(&r.name).unwrap().push_str(&format!(
+                                "\nadd address={ip} interface=vlan{vlan} comment=mt-wg-meshconf"
+                            ));
+                        }
+                    }
+                    Ok::<(), anyhow::Error>(())
+                })
+                .context("vlan address error")?;
 
             for (node, config) in configs {
                 println!("{node}:\n{config}");
