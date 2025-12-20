@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
 use std::{cmp::min, path::PathBuf};
 
+use rand::prelude::*;
+
 use serde::{Deserialize, Serialize};
 use serde_with::formats::SemicolonSeparator;
 
@@ -50,6 +52,14 @@ enum Commands {
         /// Use EVPN with vxlan
         #[arg(short, long, default_value_t = 65001)]
         as_num: u32,
+
+        /// Anycast gateway vlans
+        #[arg(short, long, value_delimiter = ',')]
+        vlans: Option<Vec<u16>>,
+
+        /// Anycast gateway addresses
+        #[arg(long, value_delimiter = ',')]
+        anycast_addresses: Option<Vec<IpAddr>>,
     },
 }
 
@@ -233,6 +243,8 @@ fn main() -> Result<()> {
             ospf,
             evpn,
             as_num,
+            vlans,
+            anycast_addresses,
         }) => {
             // Generate PTP ip pairs
 
@@ -506,6 +518,53 @@ fn main() -> Result<()> {
                     Ok::<(), anyhow::Error>(())
                 })
                 .context("vlan address error")?;
+
+            // Anycast gateways
+
+            if let Some(vlans) = vlans
+                && let Some(addrs) = anycast_addresses
+            {
+                if vlans.len() != addrs.len() {
+                    return Err(anyhow!(
+                        "Numbers of vlans and anycast addresses don't match"
+                    ));
+                }
+                // One anycast mac address for each vlan
+                let mut rng = rand::rng();
+
+                // Create macvlans
+                records.iter().for_each(|r| {
+                    configs.get_mut(&r.name).unwrap().push_str(
+                        "\n\n/interface macvlan\nremove [find comment=\"mt-wg-meshconf\"]",
+                    )
+                });
+
+                for vlan in vlans {
+                    let mut data = [0u8; 6];
+                    rng.fill_bytes(&mut data);
+                    data[0] |= 0x02; // Locally administerred
+                    data[0] &= 0xFE; // Unicast
+                    let mac = macaddr::MacAddr6::from(data);
+                    records.iter().for_each(|r| {
+                        configs.get_mut(&r.name).unwrap().push_str(&format!(
+                            "\nadd interface=vlan100 mac-address={mac} name=macvlan-wg-{vlan} comment=mt-wg-meshconf"),
+                        )
+                    });
+                }
+
+                // Add ip addresses
+                records
+                    .iter()
+                    .for_each(|r| configs.get_mut(&r.name).unwrap().push_str("\n/ip address"));
+
+                records.iter().for_each(|r| {
+                    for (vlan, addr) in vlans.iter().zip(addrs) {
+                        configs.get_mut(&r.name).unwrap().push_str(&format!(
+                            "\nadd interface=macvlan-wg-{vlan} address={addr} comment=mt-wg-meshconf"),
+                        )
+                    }
+                });
+            }
 
             for (node, config) in configs {
                 println!("{node}:\n{config}");
