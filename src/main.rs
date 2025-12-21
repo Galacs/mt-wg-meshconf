@@ -60,6 +60,10 @@ enum Commands {
         /// Anycast gateway addresses
         #[arg(long, value_delimiter = ',')]
         anycast_addresses: Option<Vec<IpAddr>>,
+
+        /// DNAT support
+        #[arg(short, long, default_value_t = false)]
+        dnat: bool,
     },
 }
 
@@ -245,6 +249,7 @@ fn main() -> Result<()> {
             as_num,
             vlans,
             anycast_addresses,
+            dnat,
         }) => {
             // Generate PTP ip pairs
 
@@ -409,15 +414,25 @@ fn main() -> Result<()> {
                 });
             }
 
+            let mut bridge_macs = HashMap::new();
+
             // EVPN
             if *evpn {
                 // Bridge
 
+                let mut rng = rand::rng();
                 records.iter().for_each(|r| {
+                    let mut data = [0u8; 6];
+                    rng.fill_bytes(&mut data);
+                    data[0] |= 0x02; // Locally administerred
+                    data[0] &= 0xFE; // Unicast
+                    let mac = macaddr::MacAddr6::from(data);
+                    bridge_macs.insert(r.name.clone(), mac);
+
                     configs
                         .get_mut(&r.name)
                         .unwrap()
-                        .push_str("\n\n/interface bridge\nremove [find comment=\"mt-wg-meshconf\"]\nadd name=wg-mesh-br vlan-filtering=yes comment=mt-wg-meshconf")
+                        .push_str(&format!("\n\n/interface bridge\nremove [find comment=\"mt-wg-meshconf\"]\nadd name=wg-mesh-br admin-mac={mac} vlan-filtering=yes comment=mt-wg-meshconf"))
                 });
                 records.iter().for_each(|r| {
                     configs.get_mut(&r.name).unwrap().push_str(
@@ -566,6 +581,85 @@ fn main() -> Result<()> {
                 });
             }
 
+            if *dnat {
+                if !evpn {
+                    return Err(anyhow!("EVPN needs to be enable for dnat to work"));
+                }
+
+                records.iter().for_each(|r| {
+                    configs
+                        .get_mut(&r.name)
+                        .unwrap()
+                        .push_str("\n\n/interface bridge settings set use-ip-firewall=yes")
+                });
+
+                records.iter().for_each(|r| {
+                    configs
+                        .get_mut(&r.name)
+                        .unwrap()
+                        .push_str("\n/routing table")
+                });
+
+                // Add routing tables
+                records.iter().for_each(|r| {
+                    for peer in &records {
+                        if r.name == peer.name {
+                            continue;
+                        }
+                        configs.get_mut(&r.name).unwrap().push_str(&format!(
+                            "\nadd fib name={} comment=mt-wg-meshconf",
+                            peer.interface
+                        ))
+                    }
+                });
+                // Add default routes on those tables
+                records
+                    .iter()
+                    .for_each(|r| configs.get_mut(&r.name).unwrap().push_str("\n/ip route"));
+                records.iter().try_for_each(|r| {
+                    for peer in &records {
+                        if r.name == peer.name {
+                            continue;
+                        }
+                        let Some(ips) = &peer.ifs_ips else {
+                            println!("warning: you need at least one unique gateway ip for the router to be able to dstnat");
+                            continue;
+                        };
+                        let Some(ip) = ips.first() else {
+                            println!("warning: you need at least one unique gateway ip for the router to be able to dstnat");
+                            continue;
+                        };
+                        let ip = ip.split("/").next().context("invalid gateway ip")?;
+                        configs.get_mut(&r.name).unwrap().push_str(&format!(
+                            "\nadd dst-address=0.0.0.0/0 gateway={ip} routing-table={} comment=mt-wg-meshconf", peer.interface));
+                    }
+                    Ok::<(), anyhow::Error>(())
+                })?;
+
+                // Add pbr
+                records.iter().for_each(|r| {
+                    configs
+                        .get_mut(&r.name)
+                        .unwrap()
+                        .push_str("\n/ip firewall mangle")
+                });
+                records.iter().for_each(|r| {
+                    for peer in &records {
+                        if r.name == peer.name {
+                            continue;
+                        }
+                        let mac = bridge_macs.get(&peer.name).unwrap();
+                        configs.get_mut(&r.name).unwrap().push_str(&format!(
+                            "\nadd action=mark-connection chain=forward new-connection-mark={} src-mac-address={mac} comment=mt-wg-meshconf",
+                            peer.interface
+                        ));
+                        configs.get_mut(&r.name).unwrap().push_str(&format!(
+                            "\nadd action=mark-routing chain=prerouting connection-mark={} new-routing-mark={} comment=mt-wg-meshconf",
+                            peer.interface, peer.interface
+                        ))
+                    }
+                });
+            }
             for (node, config) in configs {
                 println!("{node}:\n{config}");
             }
