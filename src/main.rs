@@ -547,7 +547,7 @@ fn main() -> Result<()> {
                     let mac = macaddr::MacAddr6::from(data);
                     records.iter().for_each(|r| {
                         configs.get_mut(&r.name).unwrap().push_str(&format!(
-                            "\nadd interface=vlan100 mac-address={mac} name=macvlan-wg-{vlan} comment=mt-wg-meshconf"),
+                            "\nadd interface=vlan{vlan} mac-address={mac} name=macvlan-wg-{vlan} comment=mt-wg-meshconf"),
                         )
                     });
                 }
