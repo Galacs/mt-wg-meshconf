@@ -23,6 +23,10 @@ struct Cli {
     #[arg(short, long, default_value = "mesh.csv")]
     filename: PathBuf,
 
+    /// DNAT csv file path
+    #[arg(short, long, default_value = "nat.csv")]
+    nat_filename: PathBuf,
+
     /// Config files output folder
     #[arg(long)]
     output_folder: Option<PathBuf>,
@@ -72,6 +76,9 @@ enum Commands {
         #[arg(short, long, default_value_t = false)]
         dnat: bool,
     },
+
+    /// Creates DNAT csv file
+    NatInit,
 }
 
 #[serde_as]
@@ -91,6 +98,31 @@ struct Record {
     vlan_ifs: Option<Vec<String>>,
     #[serde_as(as = "Option<StringWithSeparator::<SemicolonSeparator, String>>")]
     ifs_ips: Option<Vec<String>>,
+}
+
+#[serde_as]
+#[derive(Debug, Serialize, Deserialize)]
+struct SimpleNat {
+    comment: String,
+    dest_ip: IpAddr,
+    dest_port: Option<u16>,
+    rewrite_ip: IpAddr,
+    rewrite_port: Option<u16>,
+}
+
+#[serde_as]
+#[derive(Debug, Serialize, Deserialize)]
+struct CustomNat {
+    comment: String,
+    custom_cmd: String,
+}
+
+#[serde_as]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+enum NatRecord {
+    Simple(SimpleNat),
+    Custom(CustomNat),
 }
 
 fn main() -> Result<()> {
@@ -693,6 +725,32 @@ fn main() -> Result<()> {
                     println!("wrote {} configs", configs.len());
                 }
             }
+        }
+        Some(Commands::NatInit) => {
+            let mut wtr = csv::WriterBuilder::new()
+                .flexible(true)
+                .from_path(cli.nat_filename.clone())
+                .context(format!(
+                    "Failed to write csv to {}",
+                    cli.nat_filename.display()
+                ))?;
+            wtr.serialize(NatRecord::Simple(SimpleNat {
+                dest_ip: IpAddr::V4(Ipv4Addr::new(10, 10, 10, 10)),
+                dest_port: Some(400),
+                rewrite_ip: IpAddr::V4(Ipv4Addr::new(10, 10, 10, 10)),
+                rewrite_port: None,
+                comment: "this nat".to_owned(),
+            }))?;
+            wtr.serialize(NatRecord::Custom(CustomNat {
+                custom_cmd: "add ....".to_owned(),
+                comment: "this nat".to_owned(),
+            }))?;
+            println!(
+                "{} was created.",
+                cli.nat_filename.to_str().context("filename error")?
+            );
+            wtr.flush()
+                .context(format!("Failed to write to {}", cli.nat_filename.display()))?;
         }
         None => {}
     }
