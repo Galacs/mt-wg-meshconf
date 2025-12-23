@@ -404,7 +404,6 @@ fn main() -> Result<()> {
                         if r.name == b.name {
                             continue;
                         }
-                        dbg!(&b.interface);
                         if_list.push_str(&format!("{},", b.interface));
                     }
                     if_list.pop();
