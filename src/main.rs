@@ -439,7 +439,7 @@ fn main() -> Result<()> {
                     configs
                         .get_mut(&r.name)
                         .unwrap()
-                        .push_str(&format!("\n\n/interface bridge\nremove [find comment=\"mt-wg-meshconf\"]\nadd name=wg-mesh-br admin-mac={mac} vlan-filtering=yes comment=mt-wg-meshconf"))
+                        .push_str(&format!("\n\n/interface bridge\nremove [find comment=\"mt-wg-meshconf\"]\nadd name=wg-mesh-br admin-mac={mac} auto-mac=no vlan-filtering=yes comment=mt-wg-meshconf"))
                 });
                 records.iter().for_each(|r| {
                     configs.get_mut(&r.name).unwrap().push_str(
