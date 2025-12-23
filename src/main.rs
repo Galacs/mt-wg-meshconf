@@ -79,6 +79,9 @@ enum Commands {
 
     /// Creates DNAT csv file
     NatInit,
+
+    /// Generate NAT config
+    NatGen,
 }
 
 #[serde_as]
@@ -105,6 +108,7 @@ struct Record {
 struct SimpleNat {
     comment: String,
     dest_ip: IpAddr,
+    protocol: Option<String>,
     dest_port: Option<u16>,
     rewrite_ip: IpAddr,
     rewrite_port: Option<u16>,
@@ -120,9 +124,42 @@ struct CustomNat {
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
+// #[serde(tag = "type")]
 enum NatRecord {
     Simple(SimpleNat),
     Custom(CustomNat),
+}
+
+fn export_configs(cli: &Cli, configs: HashMap<String, String>) -> Result<(), anyhow::Error> {
+    match &cli.output_folder {
+        None => {
+            for (node, config) in configs {
+                println!("{node}:\n{config}");
+            }
+            Ok(())
+        }
+        Some(output_folder) => {
+            let path = Path::new(output_folder);
+            if path.exists() && !path.is_dir() {
+                return Err(anyhow::anyhow!(format!(
+                    "A file named {} already exists",
+                    output_folder.display()
+                )));
+            }
+            if !path.is_dir() {
+                fs::create_dir(output_folder)?;
+            }
+
+            for (node, config) in &configs {
+                let mut filepath = output_folder.clone();
+                filepath.push(format!("{node}.rsc"));
+                let mut file = File::create(filepath)?;
+                file.write_all(config.as_bytes())?;
+            }
+            println!("wrote {} configs", configs.len());
+            Ok(())
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -698,33 +735,7 @@ fn main() -> Result<()> {
                     }
                 });
             }
-            match &cli.output_folder {
-                None => {
-                    for (node, config) in configs {
-                        println!("{node}:\n{config}");
-                    }
-                }
-                Some(output_folder) => {
-                    let path = Path::new(output_folder);
-                    if path.exists() && !path.is_dir() {
-                        return Err(anyhow::anyhow!(format!(
-                            "A file named {} already exists",
-                            output_folder.display()
-                        )));
-                    }
-                    if !path.is_dir() {
-                        fs::create_dir(output_folder)?;
-                    }
-
-                    for (node, config) in &configs {
-                        let mut filepath = output_folder.clone();
-                        filepath.push(format!("{node}.rsc"));
-                        let mut file = File::create(filepath)?;
-                        file.write_all(config.as_bytes())?;
-                    }
-                    println!("wrote {} configs", configs.len());
-                }
-            }
+            export_configs(&cli, configs)?;
         }
         Some(Commands::NatInit) => {
             let mut wtr = csv::WriterBuilder::new()
@@ -736,6 +747,7 @@ fn main() -> Result<()> {
                 ))?;
             wtr.serialize(NatRecord::Simple(SimpleNat {
                 dest_ip: IpAddr::V4(Ipv4Addr::new(10, 10, 10, 10)),
+                protocol: Some("tcp".to_owned()),
                 dest_port: Some(400),
                 rewrite_ip: IpAddr::V4(Ipv4Addr::new(10, 10, 10, 10)),
                 rewrite_port: None,
@@ -751,6 +763,87 @@ fn main() -> Result<()> {
             );
             wtr.flush()
                 .context(format!("Failed to write to {}", cli.nat_filename.display()))?;
+        }
+        Some(Commands::NatGen) => {
+            let mut configs = HashMap::new();
+
+            let mut rdr = csv::Reader::from_path(cli.filename.clone()).context(format!(
+                "Failed to read csv from {}",
+                cli.filename.display()
+            ))?;
+
+            let records: Vec<Record> = rdr.deserialize().collect::<Result<Vec<_>, _>>()?;
+
+            let mut rdr = csv::ReaderBuilder::new()
+                .flexible(true)
+                .from_path(cli.nat_filename.clone())
+                .context(format!(
+                    "Failed to read csv from {}",
+                    cli.nat_filename.display()
+                ))?;
+
+            let mut nat_records: Vec<NatRecord> = Vec::new(); //rdr.deserialize().collect::<Result<Vec<_>, _>>()?;
+
+            for r in rdr.records() {
+                let r = r?;
+                if r[1].starts_with("add ") {
+                    let r: CustomNat = r.deserialize(None)?;
+                    nat_records.push(NatRecord::Custom(r));
+                } else {
+                    let r: SimpleNat = r.deserialize(None)?;
+                    nat_records.push(NatRecord::Simple(r));
+                }
+            }
+
+            // Create config entries
+            for r in &records {
+                configs.insert(
+                    r.name.clone(),
+                    format!(
+                        "# {} DNAT config generated by mt-wg-meshconf at {}",
+                        r.name,
+                        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+                    ),
+                );
+            }
+
+            records.iter().for_each(|r| {
+                configs
+                    .get_mut(&r.name)
+                    .unwrap()
+                    .push_str("\n\n/ip firewall nat\nremove [find comment=\"mt-wg-nat\"]")
+            });
+
+            records.iter().for_each(|r| {
+                nat_records.iter().for_each(|n| {
+                    let s = configs.get_mut(&r.name).unwrap();
+                    match n {
+                        NatRecord::Simple(simple_nat) => {
+                            s.push_str(&format!(
+                                "\nadd action=dst-nat chain=dstnat dst-address={} to-addresses={}",
+                                simple_nat.dest_ip, simple_nat.rewrite_ip
+                            ));
+                            if let Some(protocol) = &simple_nat.protocol {
+                                s.push_str(&format!(" protocol={protocol}"));
+                            }
+                            if let Some(rewrite_port) = &simple_nat.rewrite_port {
+                                s.push_str(&format!(" to-ports={rewrite_port}"));
+                            }
+                            if let Some(dest_port) = &simple_nat.dest_port {
+                                s.push_str(&format!(" dst-port={dest_port}"));
+                            }
+                            s.push_str(" comment=mt-wg-nat");
+                        }
+                        NatRecord::Custom(custom_nat) => {
+                            configs.get_mut(&r.name).unwrap().push_str(&format!(
+                                "\n{} comment=mt-wg-nat",
+                                custom_nat.custom_cmd
+                            ));
+                        }
+                    }
+                });
+            });
+            export_configs(&cli, configs)?;
         }
         None => {}
     }
