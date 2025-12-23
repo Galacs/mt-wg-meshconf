@@ -648,7 +648,7 @@ fn main() -> Result<()> {
                     configs
                         .get_mut(&r.name)
                         .unwrap()
-                        .push_str("\n/ip firewall mangle")
+                        .push_str("\n/ip firewall mangle\nremove [find comment=\"mt-wg-meshconf\"]")
                 });
                 records.iter().for_each(|r| {
                     for peer in &records {
