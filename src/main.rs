@@ -1,8 +1,11 @@
 use clap::{Parser, Subcommand};
 use serde_with::{StringWithSeparator, serde_as};
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::prelude::*;
 use std::net::{IpAddr, Ipv4Addr};
-use std::{cmp::min, path::PathBuf};
+use std::path::Path;
+use std::{cmp::min, fs, path::PathBuf};
 
 use rand::prelude::*;
 
@@ -64,6 +67,10 @@ enum Commands {
         /// DNAT support
         #[arg(short, long, default_value_t = false)]
         dnat: bool,
+
+        /// Config files output folder
+        #[arg(long)]
+        output_folder: Option<PathBuf>,
     },
 }
 
@@ -250,6 +257,7 @@ fn main() -> Result<()> {
             vlans,
             anycast_addresses,
             dnat,
+            output_folder,
         }) => {
             // Generate PTP ip pairs
 
@@ -659,8 +667,32 @@ fn main() -> Result<()> {
                     }
                 });
             }
-            for (node, config) in configs {
-                println!("{node}:\n{config}");
+            match output_folder {
+                None => {
+                    for (node, config) in configs {
+                        println!("{node}:\n{config}");
+                    }
+                }
+                Some(output_folder) => {
+                    let path = Path::new(output_folder);
+                    if path.exists() && !path.is_dir() {
+                        return Err(anyhow::anyhow!(format!(
+                            "A file named {} already exists",
+                            output_folder.display()
+                        )));
+                    }
+                    if !path.is_dir() {
+                        fs::create_dir(output_folder)?;
+                    }
+
+                    for (node, config) in &configs {
+                        let mut filepath = output_folder.clone();
+                        filepath.push(format!("{node}.rsc"));
+                        let mut file = File::create(filepath)?;
+                        file.write_all(config.as_bytes())?;
+                    }
+                    println!("wrote {} configs", configs.len());
+                }
             }
         }
         None => {}
