@@ -23,6 +23,10 @@ struct Cli {
     #[arg(short, long, default_value = "mesh.csv")]
     filename: PathBuf,
 
+    /// Config files output folder
+    #[arg(long)]
+    output_folder: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -67,10 +71,6 @@ enum Commands {
         /// DNAT support
         #[arg(short, long, default_value_t = false)]
         dnat: bool,
-
-        /// Config files output folder
-        #[arg(long)]
-        output_folder: Option<PathBuf>,
     },
 }
 
@@ -257,7 +257,6 @@ fn main() -> Result<()> {
             vlans,
             anycast_addresses,
             dnat,
-            output_folder,
         }) => {
             // Generate PTP ip pairs
 
@@ -667,7 +666,7 @@ fn main() -> Result<()> {
                     }
                 });
             }
-            match output_folder {
+            match &cli.output_folder {
                 None => {
                     for (node, config) in configs {
                         println!("{node}:\n{config}");
