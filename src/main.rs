@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use openssh_sftp_client::file::TokioCompatFile;
 use serde_with::{StringWithSeparator, serde_as};
 use std::collections::HashMap;
 use std::fs::File;
@@ -15,6 +16,10 @@ use serde_with::formats::SemicolonSeparator;
 use anyhow::{Context, Result, anyhow};
 
 use wireguard_keys::Privkey;
+
+use openssh::{KnownHosts, Session};
+use openssh_sftp_client::Sftp;
+use tokio::io::AsyncReadExt;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -82,6 +87,9 @@ enum Commands {
 
     /// Generate NAT config
     NatGen,
+
+    /// Send config to the routers using
+    Apply,
 }
 
 #[serde_as]
@@ -101,6 +109,7 @@ struct Record {
     vlan_ifs: Option<Vec<String>>,
     #[serde_as(as = "Option<StringWithSeparator::<SemicolonSeparator, String>>")]
     ifs_ips: Option<Vec<String>>,
+    mgmt_ip: Option<IpAddr>,
 }
 
 #[serde_as]
@@ -184,6 +193,7 @@ fn main() -> Result<()> {
                     "192.168.0.5/24".to_owned(),
                     "192.168.1.5/24".to_owned(),
                 ]),
+                mgmt_ip: Some(IpAddr::V4(Ipv4Addr::new(10, 69, 0, 10))),
             })?;
             println!(
                 "{} was created.",
@@ -844,6 +854,65 @@ fn main() -> Result<()> {
                 });
             });
             export_configs(&cli, configs)?;
+        }
+        Some(Commands::Apply) => {
+            let mut rdr = csv::Reader::from_path(cli.filename.clone()).context(format!(
+                "Failed to read csv from {}",
+                cli.filename.display()
+            ))?;
+
+            let records: Vec<Record> = rdr.deserialize().collect::<Result<Vec<_>, _>>()?;
+
+            let Some(configs_folder) = cli.output_folder else {
+                return Err(anyhow::anyhow!("Please specify --output-folder"));
+            };
+
+            let upload_time = chrono::Local::now().format("%Y-%m-%d %H-%M-%S");
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            // Upload
+            records.iter().try_for_each(|r| {
+                rt.block_on(async {
+                    let hostname = r.mgmt_ip.unwrap_or(r.loopback);
+                    println!("Connecting to {hostname}...");
+                    let ssh_session =
+                        Session::connect(&format!("ssh://{hostname}"), KnownHosts::Add).await?;
+                    let sftp = Sftp::from_session(ssh_session, Default::default()).await?;
+                    println!("Connected");
+
+                    let mut remote_file = sftp
+                        .create(&format!("mt-wg-{}-{}.auto.rsc", r.name, upload_time))
+                        .await?;
+
+                    let mut filepath = configs_folder.clone();
+                    filepath.push(format!("{}.rsc", r.name));
+                    let mut file = File::open(&filepath)?;
+
+                    println!("Sending {}...", filepath.display());
+                    let mut data = Vec::new();
+                    file.read_to_end(&mut data)?;
+                    remote_file.write_all(&data).await?;
+                    remote_file.close().await?;
+                    println!("{} sent", filepath.display());
+                    // Wait for log...
+                    let remote_file = loop {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        if let Ok(file) = sftp
+                            .open(&format!("mt-wg-{}-{}.auto.log", r.name, upload_time))
+                            .await
+                        {
+                            break file;
+                        }
+                    };
+                    let file = TokioCompatFile::new(remote_file);
+                    tokio::pin!(file);
+                    let mut str = String::new();
+                    file.read_to_string(&mut str).await?;
+                    println!("Reading...");
+                    println!("{}", str);
+
+                    Ok::<(), anyhow::Error>(())
+                })
+            })?;
         }
         None => {}
     }
