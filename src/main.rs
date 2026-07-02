@@ -867,7 +867,7 @@ fn main() -> Result<()> {
                 return Err(anyhow::anyhow!("Please specify --output-folder"));
             };
 
-            let upload_time = chrono::Local::now().format("%Y-%m-%d %H-%M-%S");
+            let upload_time = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
             let rt = tokio::runtime::Runtime::new().unwrap();
             // Upload
             records.iter().try_for_each(|r| {
