@@ -709,15 +709,7 @@ fn main() -> Result<()> {
                         if r.name == peer.name {
                             continue;
                         }
-                        let Some(ips) = &peer.ifs_ips else {
-                            println!("warning: you need at least one unique gateway ip for the router to be able to dstnat");
-                            continue;
-                        };
-                        let Some(ip) = ips.first() else {
-                            println!("warning: you need at least one unique gateway ip for the router to be able to dstnat");
-                            continue;
-                        };
-                        let ip = ip.split("/").next().context("invalid gateway ip")?;
+                        let ip = peer.loopback.to_string();
                         configs.get_mut(&r.name).unwrap().push_str(&format!(
                             "\nadd dst-address=0.0.0.0/0 gateway={ip} routing-table={} comment=mt-wg-meshconf", peer.interface));
                     }
