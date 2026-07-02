@@ -698,9 +698,12 @@ fn main() -> Result<()> {
                     }
                 });
                 // Add default routes on those tables
-                records
-                    .iter()
-                    .for_each(|r| configs.get_mut(&r.name).unwrap().push_str("\n/ip route"));
+                records.iter().for_each(|r| {
+                    configs
+                        .get_mut(&r.name)
+                        .unwrap()
+                        .push_str("\n/ip route\nremove [find comment=\"mt-wg-meshconf\"]")
+                });
                 records.iter().try_for_each(|r| {
                     for peer in &records {
                         if r.name == peer.name {
