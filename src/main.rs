@@ -682,7 +682,7 @@ fn main() -> Result<()> {
                     configs
                         .get_mut(&r.name)
                         .unwrap()
-                        .push_str("\n/routing table")
+                        .push_str("\n/routing table\nremove [find comment=\"mt-wg-meshconf\"]\n")
                 });
 
                 // Add routing tables
