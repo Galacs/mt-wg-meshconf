@@ -972,7 +972,7 @@ fn main() -> Result<()> {
                 configs
                     .get_mut(&r.name)
                     .unwrap()
-                    .push_str("\n\n/ip firewall nat\nremove [find comment=\"mt-wg-snat\"]")
+                    .push_str("\n\n/ip firewall nat\nremove [find comment=\"mt-wg-snat\"]\n")
             });
 
             records.iter().for_each(|r| {
@@ -981,7 +981,7 @@ fn main() -> Result<()> {
                     match n {
                         SNatRecord::Simple(simple_nat) => {
                             s.push_str(&format!(
-                                "\nadd action=src-nat chain=srcnat src-address={} to-addresses={} place-before=0",
+                                "add action=src-nat chain=srcnat src-address={} to-addresses={} place-before=0",
                                 simple_nat.src_ip, simple_nat.rewrite_ip
                             ));
                             if let Some(protocol) = &simple_nat.protocol {
