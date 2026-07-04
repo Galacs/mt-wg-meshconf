@@ -888,20 +888,25 @@ fn main() -> Result<()> {
                     remote_file.write_all(&data).await?;
                     remote_file.close().await?;
                     println!("{} sent", filepath.display());
-                    // Wait for log...
-                    let remote_file = loop {
-                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                        if let Ok(file) = sftp
-                            .open(&format!("mt-wg-{}-{}.auto.log", r.name, upload_time))
-                            .await
-                        {
-                            break file;
-                        }
-                    };
-                    let file = TokioCompatFile::new(remote_file);
-                    tokio::pin!(file);
                     let mut str = String::new();
-                    file.read_to_string(&mut str).await?;
+                    // Wait for log...
+                    loop {
+                        let remote_file = loop {
+                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                            if let Ok(file) = sftp
+                                .open(&format!("mt-wg-{}-{}.auto.log", r.name, upload_time))
+                                .await
+                            {
+                                break file;
+                            }
+                        };
+                        let file = TokioCompatFile::new(remote_file);
+                        tokio::pin!(file);
+                        file.read_to_string(&mut str).await?;
+                        if !str.is_empty() {
+                            break;
+                        }
+                    }
                     println!("Reading...");
                     println!("{}", str);
 
