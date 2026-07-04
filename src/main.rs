@@ -837,7 +837,7 @@ fn main() -> Result<()> {
 
             for r in rdr.records() {
                 let r = r?;
-                if r[1].starts_with("add ") {
+                if !r[1].chars().next().unwrap().is_ascii_digit() {
                     let r: CustomNat = r.deserialize(None)?;
                     nat_records.push(NatRecord::Custom(r));
                 } else {
@@ -886,9 +886,9 @@ fn main() -> Result<()> {
                             s.push_str(" comment=mt-wg-nat");
                         }
                         NatRecord::Custom(custom_nat) => {
+                            let cmd = custom_nat.custom_cmd.replace(";", ",");
                             configs.get_mut(&r.name).unwrap().push_str(&format!(
-                                "\n{} comment=mt-wg-nat",
-                                custom_nat.custom_cmd
+                                "\nadd action=dst-nat chain=dstnat {cmd} comment=mt-wg-nat"
                             ));
                         }
                     }
