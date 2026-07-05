@@ -512,7 +512,7 @@ fn main() -> Result<()> {
                 });
                 records.iter().for_each(|r| {
                     configs.get_mut(&r.name).unwrap().push_str(
-                        "\n/routing ospf area\n:do {set instance=ospf-ipv4 [find name=area0-ipv4]} on-error={add disabled=no instance=ospf-ipv4 name=area0-ipv4 comment=mt-wg-meshconf}\n",
+                        "\n/routing ospf area\n:if ([print count-only where comment=mt-wg-meshconf]=0) do={add disabled=no instance=ospf-ipv4 name=area0-ipv4 comment=mt-wg-meshconf} else={set instance=ospf-ipv4 [find name=area0-ipv4]}\n",
                     )
                 });
                 records.iter().for_each(|r| {
