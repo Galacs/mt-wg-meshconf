@@ -572,7 +572,6 @@ fn main() -> Result<()> {
                     data[0] |= 0x02; // Locally administerred
                     data[0] &= 0xFE; // Unicast
                     let mac = macaddr::MacAddr6::from(data);
-                    bridge_macs.insert(r.name.clone(), mac);
 
                     configs
                         .get_mut(&r.name)
@@ -690,11 +689,14 @@ fn main() -> Result<()> {
 
                 for vlan in vlans {
                     let mut data = [0u8; 6];
-                    rng.fill_bytes(&mut data);
-                    data[0] |= 0x02; // Locally administerred
-                    data[0] &= 0xFE; // Unicast
-                    let mac = macaddr::MacAddr6::from(data);
                     records.iter().for_each(|r| {
+                        rng.fill_bytes(&mut data);
+                        data[0] |= 0x02; // Locally administerred
+                        data[0] &= 0xFE; // Unicast
+                        let mac = macaddr::MacAddr6::from(data);
+                        bridge_macs.entry(&r.name)
+                            .or_insert_with(Vec::new)
+                            .push(mac);
                         configs.get_mut(&r.name).unwrap().push_str(&format!(
                             "\nadd interface=vlan{vlan} mac-address={mac} name=macvlan-wg-{vlan} comment=mt-wg-meshconf"),
                         )
@@ -804,11 +806,13 @@ fn main() -> Result<()> {
                         if r.name == peer.name {
                             continue;
                         }
-                        let mac = bridge_macs.get(&peer.name).unwrap();
-                        configs.get_mut(&r.name).unwrap().push_str(&format!(
-                            "\nadd action=mark-connection chain=forward new-connection-mark={} src-mac-address={mac} comment=mt-wg-meshconf",
-                            peer.interface
-                        ));
+                        let macs = bridge_macs.get(&peer.name).unwrap();
+                        for mac in macs {
+                            configs.get_mut(&r.name).unwrap().push_str(&format!(
+                                "\nadd action=mark-connection chain=forward src-address-list=!LAN new-connection-mark={} src-mac-address={mac} comment=mt-wg-meshconf",
+                                peer.interface
+                            ))
+                        }
                         configs.get_mut(&r.name).unwrap().push_str(&format!(
                             "\nadd action=mark-routing chain=prerouting connection-mark={} new-routing-mark={} comment=mt-wg-meshconf",
                             peer.interface, peer.interface
