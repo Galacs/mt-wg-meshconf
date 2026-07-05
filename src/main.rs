@@ -543,8 +543,27 @@ fn main() -> Result<()> {
 
             // EVPN
             if *evpn {
-                // Bridge
+                // Interfaces lists
+                records.iter().for_each(|r| {
+                    configs
+                        .get_mut(&r.name)
+                        .unwrap()
+                        .push_str("\n\n/interface list\n")
+                });
+                records
+                    .iter()
+                    .try_for_each(|r| {
+                        let vlans = r.vlan.clone().context("no vlan set")?;
+                        for vlan in vlans {
+                            configs.get_mut(&r.name).unwrap().push_str(&format!(
+                                ":do {{add name=if-{vlan} comment=mt-wg-meshconf}} on-error={{}}\n"
+                            ));
+                        }
+                        Ok::<(), anyhow::Error>(())
+                    })
+                    .context("vlan error")?;
 
+                // Bridge
                 records.iter().for_each(|r| {
                     let hasher = SipHasher::from(&r.name);
                     let mut rng = hasher.into_rng();
@@ -558,7 +577,7 @@ fn main() -> Result<()> {
                     configs
                         .get_mut(&r.name)
                         .unwrap()
-                        .push_str("\n\n/interface bridge\n");
+                        .push_str("\n/interface bridge\nremove [find comment=\"mt-wg-meshconf\"]\n");
                     configs
                         .get_mut(&r.name)
                         .unwrap()
@@ -577,7 +596,7 @@ fn main() -> Result<()> {
                     let ifs = r.vlan_ifs.clone().context("no vlan if set")?;
                     let vlans = r.vlan.clone().context("no vlan set")?;
                     for (i, vlan) in ifs.iter().zip(vlans) {
-                    configs.get_mut(&r.name).unwrap().push_str(&format!("\nadd bridge=wg-mesh-br frame-types=admit-only-untagged-and-priority-tagged interface={i} pvid={vlan} comment=mt-wg-meshconf"));
+                        configs.get_mut(&r.name).unwrap().push_str(&format!("\nadd bridge=wg-mesh-br frame-types=admit-only-untagged-and-priority-tagged interface={i} pvid={vlan} comment=mt-wg-meshconf"));
                     }
                     Ok::<(), anyhow::Error>(())
                 }).context("vlan error")?;
