@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use openssh_sftp_client::file::TokioCompatFile;
+use rand_seeder::rand_core::Rng;
 use serde_with::{StringWithSeparator, serde_as};
 use std::collections::HashMap;
 use std::fs::File;
@@ -9,6 +10,7 @@ use std::path::Path;
 use std::{cmp::min, fs, path::PathBuf};
 
 use rand::prelude::*;
+use rand_seeder::{Seeder, SipHasher};
 
 use serde::{Deserialize, Serialize};
 use serde_with::formats::SemicolonSeparator;
@@ -543,8 +545,9 @@ fn main() -> Result<()> {
             if *evpn {
                 // Bridge
 
-                let mut rng = rand::rng();
                 records.iter().for_each(|r| {
+                    let hasher = SipHasher::from(&r.name);
+                    let mut rng = hasher.into_rng();
                     let mut data = [0u8; 6];
                     rng.fill_bytes(&mut data);
                     data[0] |= 0x02; // Locally administerred
