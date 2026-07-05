@@ -555,7 +555,15 @@ fn main() -> Result<()> {
                     configs
                         .get_mut(&r.name)
                         .unwrap()
-                        .push_str(&format!("\n\n/interface bridge\nremove [find comment=\"mt-wg-meshconf\"]\nadd name=wg-mesh-br admin-mac={mac} auto-mac=no vlan-filtering=yes comment=mt-wg-meshconf"))
+                        .push_str("\n\n/interface bridge\n");
+                    configs
+                        .get_mut(&r.name)
+                        .unwrap()
+                        .push_str(&format!(":if ([print count-only where comment=mt-wg-meshconf]=0) do={{add name=wg-mesh-br admin-mac={mac} auto-mac=no vlan-filtering=yes comment=mt-wg-meshconf}} "));
+                    configs
+                        .get_mut(&r.name)
+                        .unwrap()
+                        .push_str(&format!("else={{set admin-mac={mac} [find comment=mt-wg-meshconf]}}"))
                 });
                 records.iter().for_each(|r| {
                     configs.get_mut(&r.name).unwrap().push_str(
