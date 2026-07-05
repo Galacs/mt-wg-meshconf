@@ -668,25 +668,6 @@ fn main() -> Result<()> {
                 Ok::<(), anyhow::Error>(())
             }).context("vlan interface error")?;
 
-            records
-                .iter()
-                .for_each(|r| configs.get_mut(&r.name).unwrap().push_str("\n/ip address"));
-
-            records
-                .iter()
-                .try_for_each(|r| {
-                    if let Some(ifs_ips) = &r.ifs_ips {
-                        for (ip, vlan) in ifs_ips.iter().zip(r.vlan.clone().context("no vlan set")?)
-                        {
-                            configs.get_mut(&r.name).unwrap().push_str(&format!(
-                                "\nadd address={ip} interface=vlan{vlan} comment=mt-wg-meshconf"
-                            ));
-                        }
-                    }
-                    Ok::<(), anyhow::Error>(())
-                })
-                .context("vlan address error")?;
-
             // Anycast gateways
 
             if let Some(vlans) = vlans
@@ -720,6 +701,25 @@ fn main() -> Result<()> {
                     });
                 }
 
+                records
+                    .iter()
+                    .for_each(|r| configs.get_mut(&r.name).unwrap().push_str("\n/ip address"));
+
+                records
+                .iter()
+                .try_for_each(|r| {
+                    if let Some(ifs_ips) = &r.ifs_ips {
+                        for (ip, vlan) in ifs_ips.iter().zip(r.vlan.clone().context("no vlan set")?)
+                        {
+                            configs.get_mut(&r.name).unwrap().push_str(&format!(
+                                "\nadd address={ip} interface=macvlan-wg-{vlan} comment=mt-wg-meshconf"
+                            ));
+                        }
+                    }
+                    Ok::<(), anyhow::Error>(())
+                })
+                .context("vlan address error")?;
+
                 // Add ip addresses
                 records
                     .iter()
@@ -728,8 +728,8 @@ fn main() -> Result<()> {
                 records.iter().for_each(|r| {
                     for (vlan, addr) in vlans.iter().zip(addrs) {
                         configs.get_mut(&r.name).unwrap().push_str(&format!(
-                            "\nadd interface=macvlan-wg-{vlan} address={addr} comment=mt-wg-meshconf"),
-                        )
+                            "\nadd interface=vlan{vlan} address={addr} comment=mt-wg-meshconf"
+                        ))
                     }
                 });
             }
