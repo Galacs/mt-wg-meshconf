@@ -1017,6 +1017,9 @@ fn main() -> Result<()> {
                     let s = configs.get_mut(&r.name).unwrap();
                     match n {
                         SNatRecord::Simple(simple_nat) => {
+                            if r.interface != simple_nat.host_fib {
+                                return
+                            }
                             s.push_str(&format!(
                                 "add action=src-nat chain=srcnat src-address={} to-addresses={} place-before=0",
                                 simple_nat.src_ip, simple_nat.rewrite_ip
