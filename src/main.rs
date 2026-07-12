@@ -591,7 +591,7 @@ fn main() -> Result<()> {
                 });
                 records.iter().for_each(|r| {
                     configs.get_mut(&r.name).unwrap().push_str(
-                        "\n/interface bridge port\nremove [find comment=\"mt-wg-meshconf\"]",
+                        "\n/interface bridge port\n:do {{remove [find comment=\"mt-wg-meshconf\"]}} on-error={{}}",
                     )
                 });
                 records.iter().try_for_each(|r| {
