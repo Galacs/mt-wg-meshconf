@@ -579,7 +579,7 @@ fn main() -> Result<()> {
                     configs
                         .get_mut(&r.name)
                         .unwrap()
-                        .push_str("\n/interface bridge\nremove [find comment=\"mt-wg-meshconf\"]\n");
+                        .push_str("\n/interface bridge\n");
                     configs
                         .get_mut(&r.name)
                         .unwrap()
@@ -591,7 +591,7 @@ fn main() -> Result<()> {
                 });
                 records.iter().for_each(|r| {
                     configs.get_mut(&r.name).unwrap().push_str(
-                        "\n/interface bridge port\n:do {{remove [find comment=\"mt-wg-meshconf\"]}} on-error={{}}",
+                        "\n/interface bridge port\n:do {:while ([:len [find comment=\"mt-wg-meshconf\"]] > 0) do={ :local i [:pick [find comment=\"mt-wg-meshconf\"] 0]; remove $i }} on-error={}",
                     )
                 });
                 records.iter().try_for_each(|r| {
@@ -608,11 +608,12 @@ fn main() -> Result<()> {
                     configs
                         .get_mut(&r.name)
                         .unwrap()
-                        .push_str("\n\n/interface vxlan\nremove [find comment=\"mt-wg-meshconf\"]")
+                        .push_str("\n\n/interface vxlan")
                 });
                 records.iter().try_for_each(|r| {
                     for vlan in r.vlan.clone().context("no vlan set")? {
-                        configs.get_mut(&r.name).unwrap().push_str(&format!("\nadd bridge=wg-mesh-br bridge-pvid={} dont-fragment=disabled learning=no local-address={} name=vxlan1000{} vni=1000{} comment=mt-wg-meshconf", vlan, r.loopback, vlan, vlan));
+                        configs.get_mut(&r.name).unwrap().push_str(&format!("\n:do {{add bridge=wg-mesh-br bridge-pvid={} dont-fragment=disabled learning=no local-address={} name=vxlan1000{} vni=1000{} comment=mt-wg-meshconf}} on-error={{set bridge=wg-mesh-br local-address={} [find comment=\"mt-wg-meshconf\"]}}",
+                            vlan, r.loopback, vlan, vlan, r.loopback));
                     }
                     Ok::<(), anyhow::Error>(())
                 }).context("vxlan error")?;
@@ -660,12 +661,12 @@ fn main() -> Result<()> {
                 configs
                     .get_mut(&r.name)
                     .unwrap()
-                    .push_str("\n\n/interface vlan\nremove [find comment=\"mt-wg-meshconf\"]")
+                    .push_str("\n\n/interface vlan")
             });
 
             records.iter().try_for_each(|r| {
                 for vlan in r.vlan.clone().context("no vlan set")? {
-                    configs.get_mut(&r.name).unwrap().push_str(&format!("\nadd interface=wg-mesh-br name=vlan{vlan} vlan-id={vlan} comment=mt-wg-meshconf"));
+                    configs.get_mut(&r.name).unwrap().push_str(&format!("\n:do {{add interface=wg-mesh-br name=vlan{vlan} vlan-id={vlan} comment=mt-wg-meshconf}} on-error={{set interface=wg-mesh-br [find name=vlan{vlan}]}}"));
                 }
                 Ok::<(), anyhow::Error>(())
             }).context("vlan interface error")?;
@@ -685,9 +686,10 @@ fn main() -> Result<()> {
 
                 // Create macvlans
                 records.iter().for_each(|r| {
-                    configs.get_mut(&r.name).unwrap().push_str(
-                        "\n\n/interface macvlan\nremove [find comment=\"mt-wg-meshconf\"]",
-                    )
+                    configs
+                        .get_mut(&r.name)
+                        .unwrap()
+                        .push_str("\n\n/interface macvlan")
                 });
 
                 for vlan in vlans {
@@ -701,7 +703,7 @@ fn main() -> Result<()> {
                             .or_insert_with(Vec::new)
                             .push(mac);
                         configs.get_mut(&r.name).unwrap().push_str(&format!(
-                            "\nadd interface=vlan{vlan} mac-address={mac} name=macvlan-wg-{vlan} comment=mt-wg-meshconf"),
+                            "\n:do {{add interface=vlan{vlan} mac-address={mac} name=macvlan-wg-{vlan} comment=mt-wg-meshconf}} on-error={{}}"),
                         )
                     });
                 }
@@ -1110,7 +1112,7 @@ fn main() -> Result<()> {
                     // Wait for log...
                     loop {
                         let remote_file = loop {
-                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                             if let Ok(file) = sftp
                                 .open(&format!("mt-wg-{}-{}.auto.log", r.name, upload_time))
                                 .await
