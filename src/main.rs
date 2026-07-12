@@ -565,7 +565,10 @@ fn main() -> Result<()> {
 
                 // Bridge
                 records.iter().for_each(|r| {
-                    let hasher = SipHasher::from(&r.name);
+                    let hasher = match anycast_addresses {
+                        Some(_) => SipHasher::from(&cli.filename),
+                        None => SipHasher::from(&r.name),
+                    };
                     let mut rng = hasher.into_rng();
                     let mut data = [0u8; 6];
                     rng.fill_bytes(&mut data);
