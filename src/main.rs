@@ -703,7 +703,7 @@ fn main() -> Result<()> {
                             .or_insert_with(Vec::new)
                             .push(mac);
                         configs.get_mut(&r.name).unwrap().push_str(&format!(
-                            "\n:do {{add interface=vlan{vlan} mac-address={mac} name=macvlan-wg-{vlan} comment=mt-wg-meshconf}} on-error={{}}"),
+                            "\n:do {{add interface=vlan{vlan} mac-address={mac} name=macvlan-wg-{vlan} comment=mt-wg-meshconf}} on-error={{set mac-address={mac} [find name=macvlan-wg-{vlan}]}}"),
                         )
                     });
                 }
